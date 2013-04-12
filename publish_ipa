@@ -1,0 +1,87 @@
+#!/usr/bin/perl -w
+use strict;
+use autodie;
+
+# *** Configure these variables ****
+# The external URL that users will access the builds from
+my $HOSTPATH = "http://www.buildmachine.com/dist";
+
+# The local file system path that corresponds to that URL
+my $APACHEDIR = "/Applications/apache-tomcat/webapps/dist";
+
+# The bundle ID for the application
+my $BUNDLEID = "com.yourcompanyname.yourappname";
+
+my $buildnamefull = shift;
+my $ipa = shift;
+my $productname = shift;
+my $buildnum = shift;
+(my $buildname) = ($buildnamefull =~ /^([^\/]+)\//);
+unless (-d "${APACHEDIR}/RELEASES/$buildname") {
+    mkdir("${APACHEDIR}/RELEASES/$buildname");
+}
+system("rm -rf ${APACHEDIR}/RELEASES/$buildname/$productname");
+mkdir("${APACHEDIR}/RELEASES/$buildname/$productname");
+if (length($productname) < 1) {
+    die "Can't get product name";
+}
+system("cp $ipa ${APACHEDIR}/RELEASES/$buildname/$productname/$productname.ipa");
+open(my $plist, ">", "${APACHEDIR}/RELEASES/$buildname/$productname/$productname.plist");
+my $plistdata =  <<END;
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+        <key>items</key>
+        <array>
+                <dict>
+                        <key>assets</key>
+                        <array>
+                                <dict>
+                                        <key>kind</key>
+                                        <string>software-package</string>
+                                        <key>url</key>
+                                        <string>${HOSTPATH}/RELEASES/${buildname}/$productname/$productname.ipa</string>
+                                </dict>
+                        </array>
+                        <key>metadata</key>
+                        <dict>
+                                <key>bundle-identifier</key>
+                                <string>${BUNDLEID}</string>
+                                <key>kind</key>
+                                <string>software</string>
+                                <key>title</key>
+                                <string>$productname</string>
+                        </dict>
+                </dict>
+        </array>
+</dict>
+</plist>
+END
+
+print $plist $plistdata;
+close($plist);
+my $date = `date`;
+chomp $date;
+my $newfile = "";
+my $newline = "<!-- $buildname/$productname --><tr><td>$productname</td><td>$buildname</td><td>$buildnum</td><td>$date</td><td><a href=\"itms-services://?action=download-manifest&url=${HOSTPATH}/RELEASES/$buildname/$productname/$productname.plist\">INSTALL</a></td><td><a href=\"${HOSTPATH}/dist/RELEASES/$buildname/$productname/$productname.ipa\">IPA</a></td></tr>\n";
+open(my $index, "<", "${APACHEDIR}/index.html");
+my $found = 0;
+while (my $line = <$index>) {
+    chomp $line;
+    if ($line =~ /\<!-- $buildname\/$productname --\>/) {
+	$newfile .= $newline;
+	$found = 1;
+    } elsif ($line eq "</table>") {
+	if ($found == 0) {
+	    $newfile .= $newline;
+	}
+	$newfile .= "$line\n";
+    } else {
+	$newfile .= "$line\n";
+    }
+}
+close $index;
+open($index, ">", "${APACHEDIR}/index.html");
+print $index $newfile;
+close($index);
